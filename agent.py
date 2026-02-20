@@ -48,9 +48,16 @@ def configure_dspy() -> None:
             print(f"[agent] DSPy configured with {model}")
             return
         except Exception as e:
-            err = str(e)
-            if any(x in err for x in ["429", "quota", "rate limit", "404", "not found"]):
-                print(f"[agent] ⚠️  {model} unavailable, trying next...")
+            # We check if the exception has a status code or look at the error string as fallback
+            status = getattr(e, "status_code", getattr(e, "code", None))
+            err_str = str(e).lower()
+            
+            # Common rate limit / not found indicators
+            is_rate_limit = status in (429, 403) or any(x in err_str for x in ["429", "quota", "rate limit", "exhausted"])
+            is_not_found = status == 404 or any(x in err_str for x in ["404", "not found"])
+            
+            if is_rate_limit or is_not_found:
+                print(f"[agent] ⚠️  {model} unavailable (Rate Limit / Not Found). Trying next...")
                 continue
             raise
 
@@ -104,7 +111,6 @@ def main(
         founder_email=founder.email,
         resume_text=resume_text,
         candidate_name=candidate_name,
-        agent_name="Gemini",
     )
 
     # --- Step 4: Send (or dry-run) ---

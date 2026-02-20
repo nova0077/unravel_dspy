@@ -21,9 +21,9 @@ class TestBuildSubject:
 
 class TestComposeEmail:
     @patch("unravel_agent.composer.dspy.ChainOfThought")
-    def test_signature_block_added_if_missing(self, mock_cot_cls):
+    def test_signature_block_is_passed_through(self, mock_cot_cls):
         mock_result = MagicMock()
-        mock_result.cover_letter = "Dear Prabhat,\n\nI would love to join Unravel.\n\nBest, Praveen"
+        mock_result.cover_letter = "Dear Prabhat,\n\nI would love to join Unravel. I Simplify.\n\nThanks,\nPraveen\n(with assistance from Gemini)"
         mock_cot_cls.return_value = MagicMock(return_value=mock_result)
 
         composed = compose_email(
@@ -33,6 +33,7 @@ class TestComposeEmail:
         )
 
         assert "with assistance from" in composed.body.lower()
+        assert "simplify" in composed.body.lower()
 
     @patch("unravel_agent.composer.dspy.ChainOfThought")
     def test_correct_recipient(self, mock_cot_cls):
@@ -50,7 +51,7 @@ class TestComposeEmail:
     @patch("unravel_agent.composer.dspy.ChainOfThought")
     def test_no_duplicate_signature(self, mock_cot_cls):
         mock_result = MagicMock()
-        mock_result.cover_letter = "Body. Thanks, Praveen (with assistance from Gemini)"
+        mock_result.cover_letter = "Body.\n\nThanks,\nPraveen\n(with assistance from Gemini)"
         mock_cot_cls.return_value = MagicMock(return_value=mock_result)
 
         composed = compose_email(
@@ -58,5 +59,5 @@ class TestComposeEmail:
             founder_email="prabhat@unravel.tech",
             resume_text="Resume",
         )
-        # Should not double-add the signature block
+        # Should not double-add the signature block (which was removed, so count remains 1 from the mock)
         assert composed.body.lower().count("with assistance from") == 1

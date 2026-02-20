@@ -1,0 +1,110 @@
+ (base) praveen@ unravel_dspy % source .venv/bin/activate && PYTHONPATH=src python agent.py --dry-run --mock-recipient praveennooka2024@gmail.com
+
+🚀 Unravel.tech Job Application Agent
+==========================================
+[agent] DSPy configured with ollama_chat/gemma3
+
+📄 Step 1: Parsing resume from Praveen's_resume.pdf...
+[resume_parser] Extracted 3322 chars from 1 page(s)
+
+🔍 Step 2: Scouting LinkedIn for Unravel.tech founders...
+[scout] DuckDuckGo search: 'founder names of unravel tech company, location Pune maharashtra'
+[scout] Extracted 31 candidate names: ['Kiran Kulkarni', 'SuperAGI Unravel.tech', 'LinkedIn Vedang', 'Manerikar Resume', 'Prajwalit Bhopale', 'Peerlist Unravel', 'India Management', 'Org Chart', 'RocketReach Unravel', 'Grade AI', 'CEO Co-Founder', 'The Org', 'Vedang Manerikar', 'Unravel Tech', 'LinkedIn Prajwalit', 'India. With', 'Experience Summary', 'Current Role', 'Industry Technology', 'Headquarters Pune', 'Founder Jul', 'Freelance On', 'Unravel India', 'The Unravel', 'Deepali Pandey']
+[scout] Person names with literal 'PR': ['Prajwalit Bhopale', 'LinkedIn Prajwalit']
+[scout] ✅ Fast-path identified: Prajwalit (from 'Prajwalit Bhopale')
+[scout] ✅ Identified: Prajwalit → prajwalit@unravel.tech
+[scout] Reasoning: Deterministic fast-path: 'Prajwalit Bhopale' is a person name where 'pr' appears as consecutive letters (no LLM needed).
+   → Found: Prajwalit (prajwalit@unravel.tech)
+
+✍️  Step 3: Composing cover letter with DSPy...
+[composer] Generating cover letter for Prajwalit using resume context...
+[composer] Subject: Apply, DSPy, Simplify
+[composer] Cover letter generated (997 chars)
+
+⚠️  [TEST MODE] Recipient overridden: prajwalit@unravel.tech → praveennooka2024@gmail.com
+
+📬 Step 4: [DRY RUN] Printing email...
+
+============================================================
+[mailer] DRY RUN — email NOT sent
+============================================================
+To:      praveennooka2024@gmail.com
+From:    praveennooka123@gmail.com
+Subject: Apply, DSPy, Simplify
+Resume:  Praveen's_resume.pdf
+------------------------------------------------------------
+Hi Praveenl, Hope you’re doing well.
+
+I’m writing to express my strong interest in the Backend Engineering role at Unravel.tech. My experience building scalable, low-latency systems, as detailed in my resume, aligns perfectly with your company’s mission to be at the forefront of agentic AI and your commitment to technical depth and rapid experimentation.
+
+Throughout my work at Helpshift, I’ve consistently focused on improving system reliability, handling real traffic at scale, and driving performance optimizations end-to-end. I’m particularly passionate about taking ownership of challenging problems and delivering robust, production-ready solutions. I'm excited by the opportunity to contribute to Unravel’s innovative approach, especially given your use of DSPy.
+
+I choose the 3rd rhyming word as Simplify because, it fits well with the quote
+Apply the pattern,
+DSPy the chain,
+Simplify the logic.
+
+Thanks,
+Praveen
+(with assistance from Gemini 2.0 Flash, Ollama gemma3, Claude 3.5 Sonnet)
+============================================================
+
+(.venv) (base) praveen@ unravel_dspy % source .venv/bin/activate && PYTHONPATH=src python agent.py --mock-recipient praveennooka2024@gmail.com 
+
+🚀 Unravel.tech Job Application Agent
+==========================================
+[agent] DSPy configured with ollama_chat/gemma3
+
+📄 Step 1: Parsing resume from Praveen's_resume.pdf...
+[resume_parser] Extracted 3322 chars from 1 page(s)
+
+🔍 Step 2: Scouting LinkedIn for Unravel.tech founders...
+[scout] DuckDuckGo search: 'founder names of unravel tech company, location Pune maharashtra'
+[scout] Extracted 31 candidate names: ['Kiran Kulkarni', 'SuperAGI Unravel.tech', 'LinkedIn Vedang', 'Manerikar Resume', 'Prajwalit Bhopale', 'Peerlist Unravel', 'India Management', 'Org Chart', 'RocketReach Unravel', 'Grade AI', 'CEO Co-Founder', 'The Org', 'Vedang Manerikar', 'Unravel Tech', 'LinkedIn Prajwalit', 'India. With', 'Experience Summary', 'Current Role', 'Industry Technology', 'Headquarters Pune', 'Founder Jul', 'Freelance On', 'Unravel India', 'The Unravel', 'Deepali Pandey']
+[scout] Person names with literal 'PR': ['Prajwalit Bhopale', 'LinkedIn Prajwalit']
+[scout] ✅ Fast-path identified: Prajwalit (from 'Prajwalit Bhopale')
+[scout] ✅ Identified: Prajwalit → prajwalit@unravel.tech
+[scout] Reasoning: Deterministic fast-path: 'Prajwalit Bhopale' is a person name where 'pr' appears as consecutive letters (no LLM needed).
+   → Found: Prajwalit (prajwalit@unravel.tech)
+
+✍️  Step 3: Composing cover letter with DSPy...
+[composer] Generating cover letter for Prajwalit using resume context...
+[composer] Subject: Apply, DSPy, Simplify
+[composer] Cover letter generated (997 chars)
+
+⚠️  [TEST MODE] Recipient overridden: prajwalit@unravel.tech → praveennooka2024@gmail.com
+
+📬 Step 4: Sending email...
+
+============================================================
+[mailer] PREVIEW — Email Ready to Send
+============================================================
+To:      praveennooka2024@gmail.com
+From:    praveennooka123@gmail.com
+Subject: Apply, DSPy, Simplify
+Resume:  Praveen's_resume.pdf
+------------------------------------------------------------
+Hi Praveenl, Hope you’re doing well.
+
+I’m writing to express my strong interest in the Backend Engineering role at Unravel.tech. My experience building scalable, low-latency systems, as detailed in my resume, aligns perfectly with your company’s mission to be at the forefront of agentic AI and your commitment to technical depth and rapid experimentation.
+
+Throughout my work at Helpshift, I’ve consistently focused on improving system reliability, handling real traffic at scale, and driving performance optimizations end-to-end. I’m particularly passionate about taking ownership of challenging problems and delivering robust, production-ready solutions. I'm excited by the opportunity to contribute to Unravel’s innovative approach, especially given your use of DSPy.
+
+I choose the 3rd rhyming word as Simplify because, it fits well with the quote
+Apply the pattern,
+DSPy the chain,
+Simplify the logic.
+
+Thanks,
+Praveen
+(with assistance from Gemini 2.0 Flash, Ollama gemma3, Claude 3.5 Sonnet)
+============================================================
+
+Send this email to praveennooka2024@gmail.com? (y/n): y
+
+[mailer] Sending email to praveennooka2024@gmail.com...
+[mailer] ✅ Email successfully sent to praveennooka2024@gmail.com
+
+✅ Done! Application sent to praveennooka2024@gmail.com
+   Subject: Apply, DSPy, Simplify
+(.venv) (base) praveen@ unravel_dspy % 

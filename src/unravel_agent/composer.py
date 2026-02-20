@@ -25,12 +25,23 @@ class WriteCoverLetter(dspy.Signature):
     - Convey a tone of being a passionate developer and a fast learner who enjoys taking on challenging problems and owning them through to production.
     - Express excitement about adding value to the backend team at Unravel.tech and mention that the resume is attached for review.
     - Keep the tone professional, concise, and genuine. DO NOT include a subject line or email headers.
+    - END the cover letter with this EXACT quote block and explanation:
+      
+      I choose the 3rd rhyming word as Simplify because, it fits well with the quote
+      Apply the pattern,
+      DSPy the chain,
+      Simplify the logic.
+      
+    - SIGN OFF the email exactly like this, replacing the bracketed values with the actual inputs (do not add any other sign-offs like "Thanks for your time" or "Best regards"):
+      Thanks,
+      [candidate_name]
+      (with assistance from [agent_name])
     """
     founder_name: str = dspy.InputField(desc="First name of the founder to address")
     company_description: str = dspy.InputField(desc="Brief description of Unravel.tech and what they build")
     resume_text: str = dspy.InputField(desc="Full text of the candidate's resume")
     candidate_name: str = dspy.InputField(desc="The candidate's first name for sign-off")
-    agent_name: str = dspy.InputField(desc="Name of the AI agent used (e.g. Gemini)")
+    agent_name: str = dspy.InputField(desc="Name of the AI agent used (e.g. Gemini 2.0 Flash)")
     cover_letter: str = dspy.OutputField(desc="The complete cover letter body text, ready to send as email")
 
 
@@ -67,8 +78,8 @@ THIRD_RHYMING_WORD = "simplify"
 
 
 def build_subject() -> str:
-    """Subject must contain: Apply, DSPy, and a rhyming third word."""
-    return f"Apply with DSPy — I {THIRD_RHYMING_WORD.title()}"
+    """Subject must contain exactly: Apply, DSPy, and a rhyming third word comma separated."""
+    return f"Apply, DSPy, {THIRD_RHYMING_WORD.title()}"
 
 
 # ---------------------------------------------------------------------------
@@ -80,7 +91,7 @@ def compose_email(
     founder_email: str,
     resume_text: str,
     candidate_name: str = "Praveen",
-    agent_name: str = "Gemini AI 3.5 pro, ollema gemma3, Claude Sonnet 4.6",
+    agent_name: str = "Gemini 2.0 Flash, Ollama gemma3, Claude 3.5 Sonnet",
 ) -> ComposedEmail:
     """
     Generate the full application email using DSPy.
@@ -107,22 +118,6 @@ def compose_email(
     )
 
     body = result.cover_letter.strip()
-
-    # Deterministically add the rhyming logic rather than relying on the LLM
-    quote_block = (
-        "\n\nI choose the 3rd rhyming word as Simplify because, it fits well with the quote\n"
-        "Apply the pattern,\n"
-        "DSPy the chain,\n"
-        "Simplify the logic,\n\n"
-        "Thanks for your time."
-    )
-    if "Simplify because" not in body:
-        body += quote_block
-
-    # Ensure the agent co-signature is present
-    signature_block = f"\n\nThanks,\n{candidate_name} (with assistance from {agent_name})"
-    if "with assistance from" not in body.lower():
-        body += signature_block
 
     subject = build_subject()
 
