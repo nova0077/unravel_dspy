@@ -30,3 +30,6 @@ playwright/
 .pytest_cache/
 .coverage
 htmlcov/
+
+# Cache directories
+.cache/

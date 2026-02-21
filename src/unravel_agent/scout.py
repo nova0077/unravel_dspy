@@ -1,62 +1,79 @@
 """
-scout.py — Discovers Unravel.tech founders and identifies the one
-with "PR" in their name using DuckDuckGo + DSPy reasoning.
+scout.py — Discovers Unravel.tech founders using DSPy-first reasoning.
 
-Search strategy:
-  1. DuckDuckGo HTML — scraper-friendly, no JS, no CAPTCHA
-  2. DuckDuckGo broader team search
-
-LLM is only called when the regex fast-path can't deterministically
-pick the right person. A deterministic pre-check always verifies
-that 'pr' is literally present in the output name (case-insensitive).
+Takes references from the web and uses DSPy to extract founders.
+Filters founder names with "PR" constraint using DSPy.
 """
 
 from __future__ import annotations
 
 import re
+import time
+import hashlib
+import os
 from dataclasses import dataclass
-from urllib.parse import quote_plus
+from urllib.parse import quote_plus, urlparse, parse_qs, unquote
+
 import dspy
+
 # ---------------------------------------------------------------------------
 # DSPy Signature
 # ---------------------------------------------------------------------------
 
-class IdentifyFounder(dspy.Signature):
+
+class ExtractFounders(dspy.Signature):
     """
-    You are given a list of real person names scraped from web pages about
-    Unravel.tech, a Pune-based AI engineering company.
+    You are given noisy web text about Unravel Tech, a Pune-based AI company.
 
-    Your task: find the name where 'pr' appears as CONSECUTIVE LETTERS
-    (case-insensitive) within the first name OR last name.
+    Task:
+    - Identify ONLY the real founders of Unravel Tech.
+    - A person must be explicitly described in the text as founding or co-founding Unravel Tech.
+    - Ignore investors, employees, executives of other companies, or unrelated people.
 
-    IMPORTANT: check each name character by character.
-    - 'Kedar'     → 'k','e','d'... → no 'pr' substring ✗
-    - 'Sovani'    → 's','o','v'... → no 'pr' substring ✗
+    Strict rules:
+    - If the text does NOT clearly mention any Unravel Tech founders, output EXACTLY: NONE
+    - Do NOT guess.
+    - Do NOT include people unless the Unravel connection is explicit.
 
-    Only output the FIRST NAME of the matching person.
+    Output format (STRICT):
+    - One founder per line
+    - Format: Full Name :: Reason why you think this person is a founder of Unravel Tech
+    - No extra commentary
     """
-    people_list: str = dspy.InputField(
-        desc="Newline-separated list of person names from web scraping"
-    )
-    founder_first_name: str = dspy.OutputField(
-        desc="First name of the person whose name contains the consecutive letters 'pr'"
-    )
-    reasoning: str = dspy.OutputField(
-        desc="Step-by-step check: show which letters of the chosen name spell 'pr'"
+
+    corpus: str = dspy.InputField(desc="Web text mentioning Unravel Tech")
+    founders: str = dspy.OutputField(
+        desc="Lines of 'Full Name :: Reason why you think this person is a founder'"
     )
 
 
 # ---------------------------------------------------------------------------
-# Data
+# Inserted: DSPy PR founder selector signature
 # ---------------------------------------------------------------------------
 
-@dataclass
-class FounderInfo:
-    first_name: str
-    email: str
-    reasoning: str
+class SelectPRFounder(dspy.Signature):
+    """
+    You are given founder candidates of Unravel Tech with supporting evidence.
 
+    Task:
+    - Identify the founder whose FIRST or LAST name contains the
+      consecutive letters "pr" (case-insensitive).
+    - Example matches: "Prajwalit", "Prem", "Chopra".
+    - Example non-matches: "Kiran", "Vedang", "Sunny".
 
+    Strict rules:
+    - The selected person MUST have "pr" in their name.
+    - Return ONLY the first name of that matching person.
+    - If no valid match exists, output EXACTLY: NONE
+    """
+
+    candidates: str = dspy.InputField(
+        desc="Founder candidates with reasons"
+    )
+    first_name: str = dspy.OutputField(
+        desc="First name of the founder containing 'pr'"
+    )
+    
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
@@ -67,196 +84,279 @@ _USER_AGENT = (
     "Chrome/122.0.0.0 Safari/537.36"
 )
 
-# Non-name words to filter from regex matches
-_NON_NAME_WORDS: set[str] = {
-    "Privacy", "Policy", "Terms", "Agreement", "Service", "Cookie",
-    "Technical", "Depth", "Production", "Engineering", "Product", "Rapid",
-    "Prototyping", "Planning", "Assessment", "Architecture", "Systems",
-    "Approach", "Mindset", "Results", "Resources", "Context", "Protocol",
-    "Espressif", "Model", "User", "About", "Contact", "Login", "Sign",
-    "Join", "Learn", "More", "View", "Profile", "People", "Company",
-    "Google", "DuckDuckGo", "Twitter", "Youtube", "Github", "Apple",
-    "Open", "Source", "Agent", "Build", "Ship", "Scale", "Team",
-    "Artificial", "Intelligence", "Machine", "Learning", "Language",
-    "Distributed", "Autonomous", "Sales", "Multi", "Modern", "Loop",
-    "Senior", "Software", "Engineer", "Developer", "Director", "Manager",
-    "Head", "Vice", "President", "Chief", "Officer", "Executive",
-    "Home", "Blog", "Talks", "Events", "Talk", "Without", "Ceremony",
-    "That", "Kill", "Ideas", "Work", "Unlike", "Prioritize", "Evaluate",
-    "Risk", "Assess", "Optimize", "Deploy", "Minutes", "Memory", "Long",
-    "Expensive", "Mistakes", "Prevents",
-    # Common LinkedIn / DDG page chrome that slips through
-    "Professional", "Overview", "Express", "Scripts", "Private", "Limited",
-    "Privately", "Held", "Promise", "Provides", "Promoted",
-}
-
 
 # ---------------------------------------------------------------------------
-# Browser / fetch helpers
+# Fetch helpers
 # ---------------------------------------------------------------------------
 
-def _fetch_html(url: str) -> str:
-    """Fetch a page using requests-style GET (no JS execution needed)."""
+
+def _fetch_html(url: str, retries: int = 2) -> str:
+    """Fetch a page with retry + disk cache."""
     import urllib.request
-    try:
-        req = urllib.request.Request(url, headers={"User-Agent": _USER_AGENT})
-        with urllib.request.urlopen(req, timeout=15) as resp:
-            return resp.read().decode("utf-8", errors="replace")
-    except Exception as exc:
-        return f"[fetch error: {exc}]"
+
+    cache_dir = ".cache/scout"
+    os.makedirs(cache_dir, exist_ok=True)
+    key = hashlib.md5(url.encode()).hexdigest()
+    cache_path = os.path.join(cache_dir, key + ".html")
+
+    if os.path.exists(cache_path):
+        try:
+            with open(cache_path, "r", encoding="utf-8") as f:
+                return f.read()
+        except Exception:
+            pass
+
+    last_err: Exception | None = None
+
+    for attempt in range(retries + 1):
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": _USER_AGENT})
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                text = resp.read().decode("utf-8", errors="replace")
+
+            try:
+                with open(cache_path, "w", encoding="utf-8") as f:
+                    f.write(text)
+            except Exception:
+                pass
+
+            return text
+
+        except Exception as exc:
+            last_err = exc
+            if attempt < retries:
+                time.sleep(0.8 * (2 ** attempt))
+            else:
+                return f"[fetch error: {exc}]"
+
+    return f"[fetch error: {last_err}]"
+
 
 
 def _strip_html_tags(html: str) -> str:
-    """Remove HTML tags, collapse whitespace."""
     text = re.sub(r"<[^>]+>", " ", html)
-    text = re.sub(r"&[a-z]+;", " ", text)   # html entities
+    text = re.sub(r"&[a-z]+;", " ", text)
     text = re.sub(r"\s+", " ", text)
     return text.strip()
 
 
+
+def _unwrap_ddg_url(url: str) -> str:
+    if "duckduckgo.com/l/?" not in url:
+        return url
+    try:
+        qs = parse_qs(urlparse(url).query)
+        real = qs.get("uddg")
+        if real:
+            return unquote(real[0])
+    except Exception:
+        pass
+    return url
+
+
+# ---------------------------------------------------------------------------
+# DuckDuckGo search
+# ---------------------------------------------------------------------------
+
+
 def _duckduckgo_search(query: str) -> str:
-    """
-    DuckDuckGo HTML endpoint — no JS, no CAPTCHA, scraper-friendly.
-    Extracts only result titles + snippets, NOT the full page UI
-    (which contains a country/region selector with 60+ country names).
-    """
     url = f"https://html.duckduckgo.com/html/?q={quote_plus(query)}"
     print(f"[scout] DuckDuckGo search: {query!r}")
+
     html = _fetch_html(url)
 
-    # Extract only result titles and snippets — ignore page chrome
-    titles   = re.findall(r'class="result__a"[^>]*>(.*?)</a>', html, re.DOTALL)
-    snippets = re.findall(r'class="result__snippet"[^>]*>(.*?)</(?:a|span)>', html, re.DOTALL)
-    parts    = titles + snippets
+    titles = re.findall(r'class="result__a"[^>]*>(.*?)</a>', html, re.DOTALL)
+    snippets = re.findall(
+        r'class="result__snippet"[^>]*>(.*?)</(?:a|span)>', html, re.DOTALL
+    )
+    links = re.findall(r'class="result__a" href="(.*?)"', html)
 
+    parts = titles + snippets
+    cleaned_parts = [_strip_html_tags(p) for p in parts]
+
+    fetched_pages: list[str] = []
+    for link in links[:2]:
+        try:
+            real_link = _unwrap_ddg_url(link)
+            page_html = _fetch_html(real_link)
+            fetched_pages.append(_strip_html_tags(page_html)[:4000])
+            print(f"[scout] fetched: {real_link}")
+        except Exception as e:
+            print(f"[scout] fetch failed: {link} :: {e}")
+
+    combined = "\n".join(cleaned_parts + fetched_pages)
+    return combined[:14000]
+
+
+# ---------------------------------------------------------------------------
+# Deterministic helpers
+# ---------------------------------------------------------------------------
+
+
+def _has_pr_name_parts(name: str) -> bool:
+    parts = name.strip().lower().split()
     if not parts:
-        # Fallback: strip all tags if DDG changed its HTML structure
-        text = re.sub(r'<[^>]+>', ' ', html)
-        text = re.sub(r'\s+', ' ', text).strip()
-        return f"=== DDG: {query!r} (raw) ===\n{text[:4000]}"
-
-    combined = "\n".join(_strip_html_tags(p) for p in parts)
-    return f"=== DDG: {query!r} ===\n{combined[:6000]}"
-
-
-
-
-
-# ---------------------------------------------------------------------------
-# Name extraction
-# ---------------------------------------------------------------------------
-
-def _extract_names(text: str) -> list[str]:
-    """
-    Extract exactly-two-word Title-Cased names, filtered by a non-name blocklist.
-    """
-    # Use robust regex for names: allow single character (e.g. Bo), hyphens, apostrophes (e.g. O'Connor, Smith-Jones).
-    # Also support lowercase particles like "van der" by making it more complex, but for simplicity
-    # and to pass tests, we stick to exactly two words that are Title-Cased, but allow more punctuation.
-    pattern = r"\b([A-Z][a-zA-Z'.-]{1,14})\s+([A-Z][a-zA-Z'.-]{1,14})\b"
-    raw_matches = re.finditer(pattern, text)
-
-    seen: set[str] = set()
-    unique: list[str] = []
-    
-    for match in raw_matches:
-        first, last = match.groups()
-        if first in _NON_NAME_WORDS or last in _NON_NAME_WORDS:
-            continue
-        full = f"{first} {last}"
-        if full not in seen:
-            seen.add(full)
-            unique.append(full)
-
-    return unique
-
-
-def _has_pr(name: str) -> bool:
-    """Return True if 'pr' appears as consecutive letters in the name."""
-    return "pr" in name.lower()
+        return False
+    if len(parts) == 1:
+        return "pr" in parts[0]
+    return "pr" in parts[0] or "pr" in parts[-1]
 
 
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
 
-def find_founder() -> FounderInfo:
-    """
-    Discovers Unravel.tech founders via DuckDuckGo + website scraping,
-    then deterministically or via DSPy identifies the one with 'PR' in their name.
-    """
+
+def find_founder() -> list[dict]:
+    """DSPy-first founder discovery returning list of {name: reason} mappings."""
+
     sections: list[str] = []
 
-    # 1. DuckDuckGo — founder search (Pune location context)
-    sections.append(
-        _duckduckgo_search("founder names of unravel tech company, location Pune maharashtra")
-    )
-
-    combined_text = "\n\n".join(sections)
-
-    # Extract candidate names
-    names = _extract_names(combined_text)
-    print(f"[scout] Extracted {len(names)} candidate names: {names[:25]}")
-
-    # --- Fast path: deterministic 'pr' substring check on PERSON names only ---
-    # Filter through the blocklist so 'Professional Overview', 'Express Scripts' etc.
-    # don't count — only real person names (both words pass the blocklist)
-    person_pr_names = [
-        n for n in names
-        if _has_pr(n)
-        and n.split()[0] not in _NON_NAME_WORDS
-        and n.split()[-1] not in _NON_NAME_WORDS
+    QUERIES = [
+        "unravel tech pune founders",
+        "who founded unravel.tech company",
+        "unravel.tech team founders",
+        "site:linkedin.com unravel tech founders",
     ]
-    print(f"[scout] Person names with literal 'PR': {person_pr_names}")
 
-    if len(person_pr_names) >= 1:
-        # Use the matched name directly — never truncate via LLM
-        matched_name  = person_pr_names[0]          # e.g. 'Prajwalit Bhopale'
-        first_name    = matched_name.split()[0]      # e.g. 'Prajwalit'
-        reasoning = (
-            f"Deterministic fast-path: '{matched_name}' is a person name "
-            f"where 'pr' appears as consecutive letters (no LLM needed)."
-        )
-        print(f"[scout] ✅ Fast-path identified: {first_name} (from '{matched_name}')")
+    for q in QUERIES:
+        sections.append(_duckduckgo_search(q))
+
+    # ------------------------------------------------------------------
+    # DSPy founder extraction PER SOURCE (more agentic)
+    # ------------------------------------------------------------------
+
+    extractor = dspy.ChainOfThought(ExtractFounders)
+
+    candidate_lines: list[str] = []
+
+    for idx, section in enumerate(sections):
+        try:
+            print(f"[scout] DSPy extracting founders from section {idx}")
+            result = extractor(corpus=section[:12000])
+
+            lines = [
+                line.strip()
+                for line in result.founders.splitlines()
+                if line.strip()
+            ]
+
+            print(f"[scout] Section {idx} candidates: {lines}")
+            candidate_lines.extend(lines)
+
+        except Exception as e:
+            print(f"[scout] DSPy extraction failed for section {idx}: {e}")
+
+    # dedupe while preserving order
+    seen = set()
+    deduped_lines: list[str] = []
+    for line in candidate_lines:
+        key = line.lower()
+        if key not in seen:
+            seen.add(key)
+            deduped_lines.append(line)
+
+    print(f"[scout] Aggregated founder candidates: {deduped_lines}")
+
+    # Build list of founder entries with name and reason
+    all_candidates: list[dict] = []
+    for line in deduped_lines:
+        low = line.lower()
+        name = None
+        reason = line
+        
+        if "::" in line:
+            name_part, reason_part = line.split("::", 1)
+            name = name_part.strip()
+            reason = reason_part.strip()
+            if name.lower() == "none":
+                name = None
+        elif "none" in low or any(x in low for x in ["does not", "no information", "not explicitly"]):
+            name = None
+            reason = line.strip()
+        else:
+            name = line.strip()
+            reason = "Supporting evidence found in source text."
+
+        all_candidates.append({"name": name, "reason": reason})
+
+    # "if none then skip adding it to result list" (filter for the final result list)
+    found_founders = [c for c in all_candidates if c["name"] is not None]
+
+    # "If no name is found then it should return {None, & a reason}"
+    if not found_founders:
+        reason = "No founder information found."
+        if all_candidates:
+            reason = all_candidates[0]["reason"]
+        return [{"name": None, "reason": reason}]
+
+    print(f"[scout] Filtered founder entries: {found_founders}")
+
+    # ------------------------------------------------------------------
+    # DSPy PR selection (agentic final step)
+    # ------------------------------------------------------------------
+
+    # Prepare candidates string for selector
+    candidates_str = "\n".join([f"{e['name']} :: {e['reason']}" for e in found_founders])
+    selector = dspy.ChainOfThought(SelectPRFounder)
+    selection = selector(candidates=candidates_str)
+
+    picked_raw = selection.first_name.strip()
+    if not picked_raw or picked_raw.upper() == "NONE":
+        print("[scout] ⚠️ No founder name containing 'pr' found by DSPy.")
+        return found_founders
+
+    # The LLM might return multiple names or extra text; we clean and filter locally
+    picked_names = [n.strip() for n in picked_raw.splitlines() if n.strip()]
+    
+    matched = None
+    final_picked_name = None
+
+    for name_candidate in picked_names:
+        # Enforce the PR constraint in Python as a final safeguard
+        if not _has_pr_name_parts(name_candidate):
+            continue
+            
+        # Match against our found_founders list
+        for f in found_founders:
+            # Check if picked name is first name OR contained in full name
+            if name_candidate.lower() == f["name"].split()[0].lower() or name_candidate.lower() in f["name"].lower():
+                matched = f
+                final_picked_name = name_candidate
+                break
+        
+        if matched:
+            break
+
+    if matched:
+        email = f"{final_picked_name.lower()}@unravel.tech"
+        matched["email"] = email
+        matched["selected"] = True
+        print(f"[scout] ✅ Identified: {final_picked_name} → {email}")
     else:
-        # Fall back to DSPy
-        people_list = "\n".join(names[:60]) if names else combined_text[:3000]
-        identifier  = dspy.ChainOfThought(IdentifyFounder)
-        result      = identifier(people_list=people_list)
-        first_name  = result.founder_first_name.strip().split()[0]
-        reasoning   = result.reasoning
+        print(f"[scout] ⚠️ Could not reliably map selection {picked_raw!r} to a candidate containing 'pr'.")
 
-        # Sanity check
-        if not _has_pr(first_name):
-            print(f"[scout] ⚠️  WARNING: LLM picked '{first_name}' which does NOT contain 'pr'!")
-
-    email = f"{first_name.lower()}@unravel.tech"
-    print(f"[scout] ✅ Identified: {first_name} → {email}")
-    print(f"[scout] Reasoning: {reasoning}")
-
-    return FounderInfo(first_name=first_name, email=email, reasoning=reasoning)
+    return found_founders
 
 
 # ---------------------------------------------------------------------------
-# Live test entrypoint — run with: python src/unravel_agent/scout.py
+# Live test
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    import os
     from dotenv import load_dotenv
 
     load_dotenv()
-
     api_key = os.environ.get("GEMINI_API_KEY", "")
 
-    # Ollama-first model list — Gemini as optional upgrade if key is valid
     MODELS = [
-        ("ollama_chat/gemma3", {}),                              # local, no quota
+        ("ollama_chat/gemma3", {}),
         ("gemini/gemini-2.5-pro-preview-03-25", {"api_key": api_key}),
-        ("gemini/gemini-2.0-flash",             {"api_key": api_key}),
+        ("gemini/gemini-2.0-flash", {"api_key": api_key}),
     ]
 
     print("🔍 Running scout live test...\n")
+
     info = None
     for model, kwargs in MODELS:
         if not api_key and "gemini" in model:
@@ -270,10 +370,14 @@ if __name__ == "__main__":
         except Exception as e:
             status = getattr(e, "status_code", getattr(e, "code", None))
             err_str = str(e).lower()
-            
-            is_rate_limit = status in (429, 403) or any(x in err_str for x in ["429", "quota", "rate", "exhausted"])
-            is_not_found = status == 404 or any(x in err_str for x in ["404", "not found"])
-            
+
+            is_rate_limit = status in (429, 403) or any(
+                x in err_str for x in ["429", "quota", "rate", "exhausted"]
+            )
+            is_not_found = status == 404 or any(
+                x in err_str for x in ["404", "not found"]
+            )
+
             if is_rate_limit or is_not_found:
                 print(f"[scout] ⚠️  {model} unavailable, trying next...")
                 continue
@@ -283,7 +387,16 @@ if __name__ == "__main__":
         raise SystemExit("❌ All models exhausted.")
 
     print("\n" + "=" * 50)
-    print(f"✅ Founder first name : {info.first_name}")
-    print(f"✅ Email address      : {info.email}")
-    print(f"💡 Reasoning          : {info.reasoning}")
+    # Find the selected founder if any
+    selected = next((f for f in info if f.get("selected")), None)
+    if selected:
+        print(f"✅ Selected Founder   : {selected['name']}")
+        print(f"✅ Email address      : {selected['email']}")
+        print(f"💡 Reasoning          : {selected['reason']}")
+    elif info and info[0].get("name") is None:
+         print(f"❌ No founders found. Reason: {info[0]['reason']}")
+    else:
+        print(f"✅ All found founders:")
+        for f in info:
+            print(f"   - {f['name']}: {f['reason']}")
     print("=" * 50)

@@ -5,7 +5,7 @@ This project is an automated AI agent designed to programmatically apply for a S
 ## High-Level Overview
 
 1. **Parse Resume**: Reads text from your provided PDF resume.
-2. **Scout Founder**: Uses DuckDuckGo search and a deterministic fast-path to find the founder of Unravel.tech whose name contains "pr".
+2. **Scout Founder**: Uses DuckDuckGo search to retrieve web references and leverages DSPy to extract Unravel.tech founders, then uses a second DSPy signature to filter for the founder whose name contains "pr".
 3. **Compose Email**: Uses DSPy and an LLM to generate a personalized cover letter matching specific constraints.
 4. **Send Application**: Sends the generated email with the resume attached via Gmail SMTP.
 

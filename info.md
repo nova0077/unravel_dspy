@@ -33,9 +33,9 @@ This script chains together the entire workflow.
 
 ### `src/unravel_agent/scout.py` (The Finder)
 Responsible for identifying the Unravel.tech founder, *specifically* looking for the condition that their name contains `"pr"` (a constraint from the hiring riddle).
-- It performs a DuckDuckGo web search via the `duckduckgo_search` library to find names associated with Unravel.tech in Pune.
-- It leverages a deterministic sequence filtering to parse the search results for names containing `"pr"` (like Prajwalit).
-- If it fails natively, it falls back to passing the search payload to DSPy's `IdentifyFounder` signature.
+- It retrieves web references about Unravel.tech via DuckDuckGo scraping.
+- It uses a DSPy Chain of Thought (`ExtractFounders` signature) to extract actual founders from the noisy web text.
+- It leverages a second DSPy signature (`SelectPRFounder`) to agentically filter candidates and select the founder with `"pr"` in their name (e.g., Prajwalit), using deterministic logic only as an ultimate safeguard.
 
 ### `src/unravel_agent/resume_parser.py` (The Extractor)
 A utility wrapper around `pdfplumber`. It opens the local PDF resume and extracts and sanitizes the available text layout to provide contextual grounding for the cover letter generation in `composer.py`.

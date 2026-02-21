@@ -101,14 +101,31 @@ def main(
 
     # --- Step 2: Scout LinkedIn to find the right founder ---
     print("\n🔍 Step 2: Scouting LinkedIn for Unravel.tech founders...")
-    founder = find_founder()
-    print(f"   → Found: {founder.first_name} ({founder.email})")
+    founders = find_founder()
+    
+    # Try to find the selected founder (the one with PR in name)
+    selected = next((f for f in founders if f.get("selected")), None)
+    
+    if not selected:
+        # Fallback: if no PR founder found, but we have some names, pick the first one
+        valid_founders = [f for f in founders if f.get("name")]
+        if valid_founders:
+            selected = valid_founders[0]
+            # Provide a fallback email
+            first_name = selected["name"].split()[0].lower()
+            selected["email"] = f"{first_name}@unravel.tech"
+        else:
+            # No founders at all
+            reason = founders[0].get("reason", "No founders found.")
+            sys.exit(f"❌ Could not continue: {reason}")
+
+    print(f"   → Selected: {selected['name']} ({selected.get('email')})")
 
     # --- Step 3: Compose cover letter grounded in resume ---
     print("\n✍️  Step 3: Composing cover letter with DSPy...")
     composed = compose_email(
-        founder_name=founder.first_name,
-        founder_email=founder.email,
+        founder_name=selected["name"].split()[0], # use first name
+        founder_email=selected.get("email"),
         resume_text=resume_text,
         candidate_name=candidate_name,
     )
